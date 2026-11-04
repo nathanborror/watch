@@ -37,6 +37,9 @@ forms above. Watch rereads it when you switch back to the app.
   restores them.
 - **Right-click a tile** to choose its channel. Picking a channel that's on
   another tile swaps the two without reloading either.
+- **Drag a tile onto another** to swap them. Both keep playing without
+  reloading, and the sound goes with the channel. (Grid only, not while
+  zoomed.)
 - New tiles fill with the next channels in the list that aren't showing.
 
 ## Zoom

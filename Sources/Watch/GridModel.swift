@@ -79,6 +79,19 @@ final class GridModel: ObservableObject {
         save()
     }
 
+    /// Swaps two positions, as when one tile is dragged onto another. Both
+    /// keep playing without reloading, and the audio goes with its channel.
+    func swap(_ a: Int, _ b: Int) {
+        guard a != b else { return }
+        slots.swapAt(a, b)
+        let moving = tiles[a]
+        tiles[a] = tiles[b]
+        tiles[b] = moving
+        if focused == a { focused = b } else if focused == b { focused = a }
+        syncTiles()
+        save()
+    }
+
     func setTileCount(_ count: TileCount) {
         guard count != tileCount else { return }
         tileCount = count

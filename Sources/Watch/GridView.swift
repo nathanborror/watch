@@ -7,6 +7,31 @@ struct GridView: View {
     @Environment(\.openSettings) private var openSettings
 
     private let spacing: CGFloat = 2
+    private static let gridSpace = "grid"
+
+    /// The tile being dragged to another spot. Resets on its own if the drag
+    /// is cancelled (say, the grid zooms mid-drag).
+    @GestureState(resetTransaction: Transaction(animation: .snappy(duration: 0.25)))
+    private var drag: Drag?
+
+    private struct Drag: Equatable {
+        var position: Int
+        var translation: CGSize
+        /// The other spot under the cursor, if any.
+        var target: Int?
+    }
+
+    /// One spot in the grid. Its identity is the running tile, so a tile
+    /// that's swapped to another spot keeps its view (and its picture) and
+    /// slides there instead of being rebuilt.
+    private struct Spot: Identifiable {
+        enum ID: Hashable {
+            case tile(ObjectIdentifier)
+            case empty(Int)
+        }
+        let position: Int
+        let id: ID
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -16,25 +41,46 @@ struct GridView: View {
             // for the model to catch up, so resizing never draws a stale grid.
             let layout = GridLayout(count: count, columns: columnCount, zoom: model.zoom)
             let visible = layout.visibleCells
+            let spots = (0..<count).map { position in
+                Spot(position: position,
+                     id: model.tiles[position].map { .tile(ObjectIdentifier($0)) } ?? .empty(position))
+            }
 
             ZStack(alignment: .topLeading) {
-                ForEach(0..<count, id: \.self) { position in
+                ForEach(spots) { spot in
+                    let position = spot.position
                     let frame = rect(for: layout.frameCell(position), in: layout, size: geo.size)
                     let isVisible = visible[position] != nil
+                    let isDragged = drag?.position == position
+                    let moved = isDragged ? drag?.translation ?? .zero : .zero
 
                     tile(at: position)
                         .frame(width: frame.width, height: frame.height)
+                        .overlay {
+                            if drag?.target == position {
+                                Rectangle().strokeBorder(.white.opacity(0.6), lineWidth: 4)
+                            }
+                        }
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { handleDoubleClick(position) }
                         .onTapGesture { handleTap(position) }
+                        // Drag a tile onto another to swap them; only in the
+                        // plain grid, where every spot is showing.
+                        .gesture(dragGesture(for: position, in: layout, size: geo.size),
+                                 including: model.zoom == .grid ? .all : .subviews)
                         .contextMenu { channelMenu(for: position) }
-                        .offset(x: frame.minX, y: frame.minY)
+                        .scaleEffect(isDragged ? 0.85 : 1)
+                        .opacity(isDragged ? 0.85 : 1)
+                        .shadow(color: .black.opacity(isDragged ? 0.6 : 0), radius: 16)
+                        .animation(.snappy(duration: 0.15), value: isDragged)
+                        .offset(x: frame.minX + moved.width, y: frame.minY + moved.height)
                         .opacity(isVisible ? 1 : 0)
                         .allowsHitTesting(isVisible)
-                        .zIndex(position == layout.zoom.target ? 1 : 0)
+                        .zIndex(isDragged ? 2 : position == layout.zoom.target ? 1 : 0)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .coordinateSpace(.named(Self.gridSpace))
             .animation(.snappy(duration: 0.25), value: model.zoom)
             .onChange(of: columnCount, initial: true) { _, newValue in
                 model.setColumns(newValue)
@@ -43,15 +89,45 @@ struct GridView: View {
         .background(.black)
     }
 
+    private func dragGesture(for position: Int, in layout: GridLayout, size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named(Self.gridSpace))
+            .updating($drag) { value, drag, _ in
+                let target = self.position(at: value.location, in: layout, size: size)
+                drag = Drag(position: position,
+                            translation: value.translation,
+                            target: target == position ? nil : target)
+            }
+            .onEnded { value in
+                guard let target = self.position(at: value.location, in: layout, size: size) else { return }
+                handleDrop(position, on: target)
+            }
+    }
+
+    /// The size of one grid cell in points, not counting the gaps.
+    private func cellSize(in layout: GridLayout, size: CGSize) -> CGSize {
+        CGSize(width: (size.width - spacing * CGFloat(layout.columns - 1)) / CGFloat(layout.columns),
+               height: (size.height - spacing * CGFloat(layout.rows - 1)) / CGFloat(layout.rows))
+    }
+
     /// A cell's rectangle in points, including the gaps it spans.
     private func rect(for cell: GridLayout.Cell, in layout: GridLayout, size: CGSize) -> CGRect {
-        let cellWidth = (size.width - spacing * CGFloat(layout.columns - 1)) / CGFloat(layout.columns)
-        let cellHeight = (size.height - spacing * CGFloat(layout.rows - 1)) / CGFloat(layout.rows)
+        let cellSize = cellSize(in: layout, size: size)
         return CGRect(
-            x: CGFloat(cell.column) * (cellWidth + spacing),
-            y: CGFloat(cell.row) * (cellHeight + spacing),
-            width: CGFloat(cell.width) * cellWidth + CGFloat(cell.width - 1) * spacing,
-            height: CGFloat(cell.height) * cellHeight + CGFloat(cell.height - 1) * spacing)
+            x: CGFloat(cell.column) * (cellSize.width + spacing),
+            y: CGFloat(cell.row) * (cellSize.height + spacing),
+            width: CGFloat(cell.width) * cellSize.width + CGFloat(cell.width - 1) * spacing,
+            height: CGFloat(cell.height) * cellSize.height + CGFloat(cell.height - 1) * spacing)
+    }
+
+    /// The grid position under a point, or nil if it's outside the grid or
+    /// in the empty end of a short last row.
+    private func position(at point: CGPoint, in layout: GridLayout, size: CGSize) -> Int? {
+        guard point.x >= 0, point.y >= 0, point.x < size.width, point.y < size.height else { return nil }
+        let cellSize = cellSize(in: layout, size: size)
+        let column = min(Int(point.x / (cellSize.width + spacing)), layout.columns - 1)
+        let row = min(Int(point.y / (cellSize.height + spacing)), layout.rows - 1)
+        let position = row * layout.columns + column
+        return position < layout.count ? position : nil
     }
 
     @ViewBuilder
@@ -62,7 +138,6 @@ struct GridView: View {
                 tile: tile,
                 title: library.channel(id: tile.channel.id)?.displayName ?? tile.channel.displayName,
                 isFocused: isFocused)
-                .id(ObjectIdentifier(tile))
         } else {
             EmptyTileView(isFocused: isFocused)
         }
@@ -98,7 +173,15 @@ struct GridView: View {
     }
 
     private func handlePick(_ channel: Channel, at position: Int) {
-        model.assign(channel.id, to: position)
+        withAnimation(.snappy(duration: 0.25)) {
+            model.assign(channel.id, to: position)
+        }
+    }
+
+    private func handleDrop(_ position: Int, on target: Int) {
+        withAnimation(.snappy(duration: 0.25)) {
+            model.swap(position, target)
+        }
     }
 
     private func handleEditChannels() {
