@@ -1,10 +1,6 @@
 # Watch
 
-A grid of live YouTube, Rumble, and Kick channels in one macOS window.
-
-Requires `yt-dlp` (`brew install yt-dlp`) for YouTube. Streams are resolved
-with yt-dlp (YouTube) or straight from the site (Rumble, Kick) and played natively
-with AVPlayer — no re-encoding, no web views.
+A grid of live YouTube, Rumble, and Kick channels in one macOS window. Requires `yt-dlp` (`brew install yt-dlp`) for YouTube. Streams are resolved with yt-dlp (YouTube) or straight from the site (Rumble, Kick) and played natively with AVPlayer — no re-encoding, no web views.
 
 <img src="Screenshot.png">
 
