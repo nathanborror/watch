@@ -6,6 +6,8 @@ Requires `yt-dlp` (`brew install yt-dlp`) for YouTube. Streams are resolved
 with yt-dlp (YouTube) or straight from the site (Rumble, Kick) and played natively
 with AVPlayer — no re-encoding, no web views.
 
+<img src="Screenshot.png">
+
 ## Run
 
     make run        # debug build, from the terminal (same as `swift run Watch`)
